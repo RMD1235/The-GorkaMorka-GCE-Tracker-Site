@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Mob, WarriorType } from '../types';
 import { saveMob } from '../services/storageService';
@@ -21,6 +22,7 @@ export const Setup: React.FC<SetupProps> = ({ setMob }) => {
       teef: 100,
       warriors: [],
       vehicles: [],
+      stash: [],
       battlesFought: 0,
       mobRating: 0
     };

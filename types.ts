@@ -26,12 +26,19 @@ export interface StatLine {
   Ld: number;
 }
 
+export interface Skill {
+  name: string;
+  description: string;
+  table: string;
+}
+
 export interface Item {
   id: string;
   name: string;
   cost: number;
   type: 'Weapon' | 'Armor' | 'Equipment' | 'VehicleUpgrade' | 'Hand-to-Hand' | 'Gunz' | 'Stikkbombz' | 'Slaver' | 'Vehicle Weapon' | 'Gubbinz';
   notes?: string;
+  upgrades?: string[]; // For Mek jobs
 }
 
 export interface Warrior {
@@ -41,8 +48,10 @@ export interface Warrior {
   stats: StatLine;
   cost: number;
   experience: number;
+  advances: number; // Number of level ups taken
   equipment: Item[];
   injuries: string[];
+  skills: Skill[];
   isInjured: boolean; // Misses next game
 }
 
@@ -65,6 +74,7 @@ export interface Mob {
   teef: number;
   warriors: Warrior[];
   vehicles: Vehicle[];
+  stash: Item[]; // Unassigned items
   battlesFought: number;
   mobRating: number;
 }
