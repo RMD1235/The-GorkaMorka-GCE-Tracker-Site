@@ -11,7 +11,7 @@ interface PostGameProps {
   setMob: React.Dispatch<React.SetStateAction<Mob | null>>;
 }
 
-type Step = 'SETUP' | 'INJURIES' | 'VEHICLE_DAMAGE' | 'INCOME' | 'SUMMARY';
+type Step = 'SETUP' | 'INJURIES' | 'VEHICLE_DAMAGE' | 'MINING' | 'INCOME' | 'SUMMARY';
 
 export const PostGame: React.FC<PostGameProps> = ({ mob, setMob }) => {
   const navigate = useNavigate();
@@ -24,10 +24,12 @@ export const PostGame: React.FC<PostGameProps> = ({ mob, setMob }) => {
   const [participationRolls, setParticipationRolls] = useState<Record<string, number>>({}); // Store individual D6 rolls
 
   const [oosIds, setOosIds] = useState<Set<string>>(new Set()); 
-  const [injuriesLog, setInjuriesLog] = useState<Record<string, { roll: number, result: string }>>({});
+  const [injuriesLog, setInjuriesLog] = useState<Record<string, string[]>>({}); // Change to array of strings for multiple injuries
   
   const [wreckedIds, setWreckedIds] = useState<Set<string>>(new Set());
   const [vehicleDamageLog, setVehicleDamageLog] = useState<Record<string, { roll: number, result: string }>>({});
+
+  const [miners, setMiners] = useState<Set<string>>(new Set());
 
   const [grossIncome, setGrossIncome] = useState(0);
   const [extraTeef, setExtraTeef] = useState(0); 
@@ -69,24 +71,50 @@ export const PostGame: React.FC<PostGameProps> = ({ mob, setMob }) => {
     setWreckedIds(newSet);
   };
 
+  const toggleMiner = (id: string) => {
+      const newSet = new Set(miners);
+      if (newSet.has(id)) newSet.delete(id);
+      else newSet.add(id);
+      setMiners(newSet);
+  };
+
   const rollDice = (d: number) => Math.floor(Math.random() * d) + 1;
 
+  const getInjuryResult = (): string => {
+      const d66 = parseInt(`${rollDice(6)}${rollDice(6)}`);
+      const entry = INJURY_TABLE.find(e => e.range.includes(d66));
+      let result = entry ? entry.result : 'Full Recovery';
+      
+      if (result === 'Arm Wound' || result === 'Leg Wound' || result === 'Blinded in One Eye') {
+          const side = rollDice(6) <= 3 ? '(Left)' : '(Right)';
+          result = `${result} ${side}`;
+      }
+      return result;
+  };
+
   const resolveInjuries = () => {
-    const newInjuriesLog: Record<string, { roll: number, result: string }> = {};
+    const newInjuriesLog: Record<string, string[]> = {};
     
     mob.warriors.forEach(w => {
       if (oosIds.has(w.id)) {
-        const d66 = parseInt(`${rollDice(6)}${rollDice(6)}`);
-        const entry = INJURY_TABLE.find(e => e.range.includes(d66));
-        let result = entry ? entry.result : 'Full Recovery';
-        
-        // Add Specificity
-        if (result === 'Arm Wound' || result === 'Leg Wound' || result === 'Blinded in One Eye') {
-            const side = rollDice(6) <= 3 ? '(Left)' : '(Right)';
-            result = `${result} ${side}`;
-        }
+        let results: string[] = [];
+        let primaryResult = getInjuryResult();
 
-        newInjuriesLog[w.id] = { roll: d66, result };
+        if (primaryResult === 'Multiple Injuries') {
+            const count = rollDice(6);
+            for(let i=0; i<count; i++) {
+                let subResult = getInjuryResult();
+                // Reroll invalid multiple results
+                while(subResult === 'Dead' || subResult === 'Multiple Injuries') {
+                    subResult = getInjuryResult();
+                }
+                results.push(subResult);
+            }
+        } else {
+            results.push(primaryResult);
+        }
+        
+        newInjuriesLog[w.id] = results;
       }
     });
 
@@ -107,42 +135,29 @@ export const PostGame: React.FC<PostGameProps> = ({ mob, setMob }) => {
     });
 
     setVehicleDamageLog(newLog);
-    setStep('INCOME');
-  };
-
-  const dokReroll = (warriorId: string) => {
-    // Reroll logic: Generate NEW random numbers
-    const d66 = parseInt(`${rollDice(6)}${rollDice(6)}`);
-    const entry = INJURY_TABLE.find(e => e.range.includes(d66));
-    let result = entry ? entry.result : 'Full Recovery';
     
-    if (result === 'Arm Wound' || result === 'Leg Wound' || result === 'Blinded in One Eye') {
-        const side = rollDice(6) <= 3 ? '(Left)' : '(Right)';
-        result = `${result} ${side}`;
-    }
+    // Auto-select eligible miners logic
+    const eligibleMiners = new Set<string>();
+    mob.warriors.forEach(w => {
+        const isHurt = !!injuriesLog[w.id];
+        // Cannot mine if OOA or Captured (Captured is handled in injury string usually, but checked here via log presence)
+        if (!isHurt && (w.type === 'Boy' || w.type === 'Grot' || w.type === 'Yoof')) {
+            eligibleMiners.add(w.id);
+        }
+    });
+    setMiners(eligibleMiners);
 
-    setInjuriesLog(prev => ({ 
-        ...prev, 
-        [warriorId]: { roll: d66, result } 
-    }));
-  };
-
-  const fixerReroll = (vehicleId: string) => {
-    const d66 = parseInt(`${rollDice(6)}${rollDice(6)}`);
-    const entry = VEHICLE_DAMAGE_TABLE.find(e => e.range.includes(d66));
-    const result = entry ? entry.result : 'Fixed';
-    setVehicleDamageLog(prev => ({
-        ...prev,
-        [vehicleId]: { roll: d66, result }
-    }));
+    setStep('MINING');
   };
 
   const calculateIncome = () => {
     let miningIncome = 0;
-    mob.warriors.forEach(w => {
-      if (!oosIds.has(w.id) && !w.isInjured && (w.type === 'Boy' || w.type === 'Grot')) {
-        miningIncome += (w.type === 'Boy' ? rollDice(6) : Math.ceil(rollDice(6)/2)); 
-      }
+    
+    miners.forEach(id => {
+        const w = mob.warriors.find(war => war.id === id);
+        if (w) {
+             miningIncome += (w.type === 'Boy' ? rollDice(6) : Math.ceil(rollDice(6)/2)); 
+        }
     });
 
     const totalGross = miningIncome + extraTeef;
@@ -176,13 +191,20 @@ export const PostGame: React.FC<PostGameProps> = ({ mob, setMob }) => {
         
         // Handle Injuries
         if (injuriesLog[w.id]) {
-            const { result } = injuriesLog[w.id];
-            if (result === 'Dead') {
+            const results = injuriesLog[w.id];
+            
+            // Check for Dead
+            if (results.includes('Dead')) {
                 deadIds.push(w.id);
-            } else if (result === 'Full Recovery' || result === 'Captured') {
-                warrior.isInjured = true;
             } else {
-                warrior.injuries = [...warrior.injuries, result];
+                // Check if missed next game
+                if (results.includes('Full Recovery') || results.includes('Captured') || results.includes('Gobsmacked')) {
+                    warrior.isInjured = true;
+                }
+                
+                // Add injuries excluding transient ones
+                const permanentInjuries = results.filter(r => r !== 'Full Recovery');
+                warrior.injuries = [...warrior.injuries, ...permanentInjuries];
             }
         }
 
@@ -376,6 +398,33 @@ export const PostGame: React.FC<PostGameProps> = ({ mob, setMob }) => {
       );
   }
 
+  if (step === 'MINING') {
+      return (
+        <div className="bg-zinc-800 p-6 ork-border text-white">
+            <h2 className="text-3xl font-black mb-4 text-green-500 uppercase">Da Mines</h2>
+            <p className="mb-4 text-gray-300 font-medium">Who is diggin' for teef? (Eligible warriors auto-selected)</p>
+            
+            <div className="space-y-2 mb-8 max-h-96 overflow-y-auto">
+            {mob.warriors.filter(w => !oosIds.has(w.id)).map(w => (
+                <div key={w.id} className={`flex items-center p-3 border-2 transition-colors cursor-pointer ${miners.has(w.id) ? 'bg-green-900/50 border-green-500' : 'bg-zinc-700 border-zinc-600'}`} onClick={() => toggleMiner(w.id)}>
+                <input 
+                    type="checkbox" 
+                    checked={miners.has(w.id)} 
+                    readOnly
+                    className="w-6 h-6 mr-3 accent-green-600 pointer-events-none"
+                />
+                <span className={`font-bold ${miners.has(w.id) ? 'text-green-200' : 'text-gray-300'}`}>{w.name} ({w.type})</span>
+                </div>
+            ))}
+            </div>
+
+            <button onClick={() => setStep('INCOME')} className="w-full py-4 bg-green-700 font-black text-2xl uppercase tracking-widest ork-border hover:bg-green-600 btn-ork text-white shadow-[4px_4px_0_#000]">
+            CALCULATE TEFF
+            </button>
+        </div>
+      );
+  }
+
   if (step === 'INCOME') {
     return (
       <div className="bg-zinc-800 p-6 ork-border text-white">
@@ -386,12 +435,14 @@ export const PostGame: React.FC<PostGameProps> = ({ mob, setMob }) => {
                 <h3 className="font-black text-xl text-yellow-500 mb-2 uppercase">Injuries</h3>
                 {Object.keys(injuriesLog).length === 0 ? <p className="text-gray-500 italic">None.</p> : (
                     <div className="space-y-2">
-                    {Object.entries(injuriesLog).map(([id, injury]) => {
+                    {Object.entries(injuriesLog).map(([id, injuries]) => {
                         const warrior = mob.warriors.find(w => w.id === id);
                         return (
-                            <div key={id} className="flex justify-between items-center bg-zinc-800 p-2 border border-zinc-700">
-                                <div><span className="font-bold text-red-400">{warrior?.name}</span> <span className="text-xs text-gray-400">({injury.roll} - {injury.result})</span></div>
-                                <button onClick={() => dokReroll(id)} className="bg-blue-600 hover:bg-blue-500 text-white text-xs px-2 py-1 uppercase border border-blue-400">Dok Reroll</button>
+                            <div key={id} className="bg-zinc-800 p-2 border border-zinc-700">
+                                <span className="font-bold text-red-400 block mb-1">{warrior?.name}</span>
+                                {injuries.map((inj, i) => (
+                                    <div key={i} className="text-xs text-gray-400 ml-2">- {inj}</div>
+                                ))}
                             </div>
                         );
                     })}
@@ -407,7 +458,6 @@ export const PostGame: React.FC<PostGameProps> = ({ mob, setMob }) => {
                         return (
                             <div key={id} className="flex justify-between items-center bg-zinc-800 p-2 border border-zinc-700">
                                 <div><span className="font-bold text-orange-400">{v?.name}</span> <span className="text-xs text-gray-400">({dmg.roll} - {dmg.result})</span></div>
-                                <button onClick={() => fixerReroll(id)} className="bg-blue-600 hover:bg-blue-500 text-white text-xs px-2 py-1 uppercase border border-blue-400">Fixer Reroll</button>
                             </div>
                         );
                     })}

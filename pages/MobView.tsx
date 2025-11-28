@@ -25,16 +25,33 @@ export const MobView: React.FC<MobViewProps> = ({ mob, setMob }) => {
   const [skillTable, setSkillTable] = useState<string>('Muscle');
   const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
 
-  // Manual Edit
+  // Manual Edit Warrior
   const [editModeId, setEditModeId] = useState<string | null>(null);
+  const [manualSkillTable, setManualSkillTable] = useState<string>('Muscle');
+  const [manualSkill, setManualSkill] = useState<Skill | null>(null);
+
+  // Manual Edit Vehicle
+  const [editVehicleId, setEditVehicleId] = useState<string | null>(null);
 
   // Stash Mode
   const [stashMode, setStashMode] = useState(false);
+
+  // Print Mode
+  const [printMode, setPrintMode] = useState(false);
 
   // Pit Fight
   const [pitFightMode, setPitFightMode] = useState(false);
   const [fighter1, setFighter1] = useState<string>('');
   const [fighter2, setFighter2] = useState<string>('');
+
+  const getVehicleValue = (vehicle: Vehicle) => {
+    let val = vehicle.cost;
+    vehicle.equipment.forEach(e => {
+        val += e.cost;
+        if (e.upgrades) val += (e.upgrades.length * 5);
+    });
+    return val;
+  };
 
   const calculateMobRating = (currentMob: Mob) => {
     let rating = 0;
@@ -44,11 +61,7 @@ export const MobView: React.FC<MobViewProps> = ({ mob, setMob }) => {
       rating += Math.floor(w.experience / 10);
     });
     currentMob.vehicles.forEach(v => {
-      rating += v.cost;
-      v.equipment.forEach(e => {
-          rating += e.cost;
-          if (e.upgrades) rating += (e.upgrades.length * 5);
-      });
+      rating += getVehicleValue(v);
     });
     return rating;
   };
@@ -60,22 +73,17 @@ export const MobView: React.FC<MobViewProps> = ({ mob, setMob }) => {
     return val;
   };
 
-  const getVehicleValue = (vehicle: Vehicle) => {
-    let val = vehicle.cost;
-    vehicle.equipment.forEach(e => {
-        val += e.cost;
-        if (e.upgrades) val += (e.upgrades.length * 5);
-    });
-    return val;
-  };
-
   const getEffectiveStats = (warrior: Warrior): StatLine => {
       const stats = { ...warrior.stats };
       
-      // Basic injury logic (simplified based on injury name strings)
+      // Yoof Growth Logic
+      if (warrior.type === WarriorType.YOOF && warrior.experience >= 21) {
+          stats.T = Math.max(stats.T, 4); // Automatically bumps to 4 if lower
+      }
+
+      // Basic injury logic
       warrior.injuries.forEach(inj => {
           if (inj.includes('Leg Wound')) stats.M = Math.max(0, stats.M - 1);
-          if (inj.includes('Arm Wound')) stats.S = Math.max(1, stats.S - 1); // Impact handled in combat usually, but visual here
           if (inj.includes('Chest Wound')) stats.T = Math.max(1, stats.T - 1);
           if (inj.includes('Blinded')) stats.BS = Math.max(1, stats.BS - 1);
       });
@@ -158,7 +166,8 @@ export const MobView: React.FC<MobViewProps> = ({ mob, setMob }) => {
       propulsion: vehiclePropulsion,
       cost: cost,
       equipment: [],
-      damage: []
+      damage: [],
+      crewIds: []
     };
 
     const updatedMob = {
@@ -264,6 +273,49 @@ export const MobView: React.FC<MobViewProps> = ({ mob, setMob }) => {
     saveMob({ ...mob, warriors: updatedWarriors });
   };
 
+  const handleVehicleEdit = (vehicleId: string, field: 'name' | 'damage', val: any) => {
+      const updatedVehicles = mob.vehicles.map(v => {
+          if (v.id === vehicleId) {
+              if (field === 'name') return { ...v, name: val };
+              if (field === 'damage') return { ...v, damage: val };
+          }
+          return v;
+      });
+      setMob({ ...mob, vehicles: updatedVehicles });
+      saveMob({ ...mob, vehicles: updatedVehicles });
+  };
+
+  const handleVehicleCrewChange = (vehicleId: string, role: 'driver' | 'gunner' | 'crew', warriorId: string) => {
+      const updatedVehicles = mob.vehicles.map(v => {
+          if (v.id === vehicleId) {
+              if (role === 'driver') return { ...v, driverId: warriorId || undefined };
+              if (role === 'gunner') return { ...v, gunnerId: warriorId || undefined };
+              if (role === 'crew') {
+                  const currentCrew = v.crewIds || [];
+                  const newCrew = currentCrew.includes(warriorId) 
+                    ? currentCrew.filter(id => id !== warriorId)
+                    : [...currentCrew, warriorId];
+                  return { ...v, crewIds: newCrew };
+              }
+          }
+          return v;
+      });
+      setMob({ ...mob, vehicles: updatedVehicles });
+      saveMob({ ...mob, vehicles: updatedVehicles });
+  };
+
+  const addManualSkill = (warriorId: string) => {
+      if (!manualSkill) return;
+      const updatedWarriors = mob.warriors.map(w => {
+          if (w.id === warriorId) {
+              return { ...w, skills: [...w.skills, manualSkill] };
+          }
+          return w;
+      });
+      setMob({ ...mob, warriors: updatedWarriors });
+      saveMob({ ...mob, warriors: updatedWarriors });
+  };
+
   const removeSkill = (warriorId: string, skillIndex: number) => {
     if(!confirm("Remove dis skill?")) return;
     const updatedWarriors = mob.warriors.map(w => {
@@ -339,8 +391,6 @@ export const MobView: React.FC<MobViewProps> = ({ mob, setMob }) => {
   const resolvePitFight = () => {
       if (!fighter1 || !fighter2 || fighter1 === fighter2) return alert("Pick two different fighters!");
       
-      // Simple resolution: Highest roll wins (abstracted)
-      // Gain XP logic
       const w1 = mob.warriors.find(w => w.id === fighter1);
       const w2 = mob.warriors.find(w => w.id === fighter2);
       if (!w1 || !w2) return;
@@ -359,9 +409,9 @@ export const MobView: React.FC<MobViewProps> = ({ mob, setMob }) => {
 
       const updatedWarriors = mob.warriors.map(w => {
           if (w.id === fighter1 || w.id === fighter2) {
-              let xp = rollDice(6); // Participation
+              let xp = rollDice(6); 
               if (winner && w.id === winner.id) {
-                  xp = 5; // Winner fixed bonus (replacing participation per rules usually, but simplified here to flat 5 win, D6 lose)
+                  xp = 5; 
               }
               return { ...w, experience: w.experience + xp };
           }
@@ -370,18 +420,85 @@ export const MobView: React.FC<MobViewProps> = ({ mob, setMob }) => {
 
       alert(msg);
       
-      if (winner && winner.id !== fighter1 && mob.warriors.find(w => w.id === fighter1)?.type === 'Nob') {
-          if (confirm(`Does ${winner.name} take over as Leader?`)) {
-              // Swap types logic would go here, simplified for now
-          }
-      }
-
       const updatedMob = { ...mob, warriors: updatedWarriors };
       updatedMob.mobRating = calculateMobRating(updatedMob);
       setMob(updatedMob);
       saveMob(updatedMob);
       setPitFightMode(false);
   };
+
+  if (printMode) {
+      return (
+          <div className="bg-white text-black font-mono p-8 max-w-4xl mx-auto">
+              <div className="flex justify-between items-center mb-6 border-b-2 border-black pb-4">
+                  <h1 className="text-4xl font-bold uppercase">{mob.name}</h1>
+                  <div className="text-right">
+                      <p>Rating: {mob.mobRating} | Teef: {mob.teef}</p>
+                      <button onClick={() => setPrintMode(false)} className="text-xs underline text-red-500 print:hidden">Back to App</button>
+                  </div>
+              </div>
+
+              <h2 className="text-2xl font-bold uppercase mb-4 border-b border-black">Warriors</h2>
+              <table className="w-full text-left text-sm mb-8 border-collapse">
+                  <thead>
+                      <tr className="border-b-2 border-black">
+                          <th className="py-2">Name</th>
+                          <th>Type</th>
+                          <th>M</th><th>WS</th><th>BS</th><th>S</th><th>T</th><th>W</th><th>I</th><th>A</th><th>Ld</th>
+                          <th>Gear & Skills</th>
+                          <th>Injuries</th>
+                          <th>XP</th>
+                          <th>Cost</th>
+                      </tr>
+                  </thead>
+                  <tbody>
+                      {mob.warriors.map(w => {
+                          const stats = getEffectiveStats(w);
+                          return (
+                              <tr key={w.id} className="border-b border-gray-400">
+                                  <td className="py-2 font-bold">{w.name}</td>
+                                  <td>{w.type}</td>
+                                  <td>{stats.M}</td><td>{stats.WS}</td><td>{stats.BS}</td><td>{stats.S}</td><td>{stats.T}</td><td>{stats.W}</td><td>{stats.I}</td><td>{stats.A}</td><td>{stats.Ld}</td>
+                                  <td>
+                                      {w.equipment.map(e => e.name + (e.upgrades ? ` (${e.upgrades.join(',')})` : '')).join(', ')}
+                                      {w.skills.length > 0 && <br/>}
+                                      <span className="italic">{w.skills.map(s => s.name).join(', ')}</span>
+                                  </td>
+                                  <td>{w.injuries.join(', ')}</td>
+                                  <td>{w.experience}</td>
+                                  <td>{getWarriorValue(w)}</td>
+                              </tr>
+                          );
+                      })}
+                  </tbody>
+              </table>
+
+              <h2 className="text-2xl font-bold uppercase mb-4 border-b border-black">Vehicles</h2>
+              <table className="w-full text-left text-sm border-collapse">
+                  <thead>
+                      <tr className="border-b-2 border-black">
+                          <th className="py-2">Name</th>
+                          <th>Type</th>
+                          <th>Gear</th>
+                          <th>Damage</th>
+                          <th>Value</th>
+                      </tr>
+                  </thead>
+                  <tbody>
+                      {mob.vehicles.map(v => (
+                          <tr key={v.id} className="border-b border-gray-400">
+                              <td className="py-2 font-bold">{v.name}</td>
+                              <td>{v.type} ({v.propulsion})</td>
+                              <td>{v.equipment.map(e => e.name + (e.upgrades ? ` (${e.upgrades.join(',')})` : '')).join(', ')}</td>
+                              <td>{v.damage.join(', ')}</td>
+                              <td>{getVehicleValue(v)}</td>
+                          </tr>
+                      ))}
+                  </tbody>
+              </table>
+          </div>
+      );
+  }
 
   return (
     <div className="space-y-8">
@@ -397,8 +514,9 @@ export const MobView: React.FC<MobViewProps> = ({ mob, setMob }) => {
               <span className="bg-green-900 px-2 py-1 rounded ork-border shadow-sm border border-green-700">Battles: {mob.battlesFought}</span>
             </div>
           </div>
-          <div className="mt-4 md:mt-0 text-right">
-            <button onClick={() => setStashMode(!stashMode)} className={`mr-4 px-4 py-2 border ${stashMode ? 'bg-yellow-500 text-black' : 'bg-zinc-800 text-gray-300'}`}>
+          <div className="mt-4 md:mt-0 text-right flex gap-4">
+            <button onClick={() => setPrintMode(true)} className="px-4 py-2 border bg-zinc-800 text-gray-300 hover:text-white">PRINT ROSTER</button>
+            <button onClick={() => setStashMode(!stashMode)} className={`px-4 py-2 border ${stashMode ? 'bg-yellow-500 text-black' : 'bg-zinc-800 text-gray-300'}`}>
                 {stashMode ? 'CLOSE STASH' : 'OPEN STASH'}
             </button>
             <div className="inline-block">
@@ -549,22 +667,49 @@ export const MobView: React.FC<MobViewProps> = ({ mob, setMob }) => {
                             ))}
                         </div>
                     ) : <span className="text-xs text-gray-600 italic">None</span>}
+                    
+                    {editModeId === warrior.id && (
+                        <div className="mt-2 flex gap-2">
+                            <select className="bg-black text-xs text-white" value={manualSkillTable} onChange={e => setManualSkillTable(e.target.value)}>
+                                {Object.keys(SKILL_TABLES).map(t => <option key={t} value={t}>{t}</option>)}
+                            </select>
+                            <select className="bg-black text-xs text-white" onChange={e => {
+                                const s = SKILL_TABLES[manualSkillTable].find(k => k.name === e.target.value);
+                                setManualSkill(s || null);
+                            }}>
+                                <option value="">Add Skill...</option>
+                                {SKILL_TABLES[manualSkillTable].map(s => <option key={s.name} value={s.name}>{s.name}</option>)}
+                            </select>
+                            <button onClick={() => addManualSkill(warrior.id)} className="bg-green-700 text-white text-xs px-2 rounded">Add</button>
+                        </div>
+                    )}
                 </div>
 
                 {warrior.injuries.length > 0 && (
                   <div className="text-red-400 text-xs mt-2 font-bold bg-red-900/20 p-2 border border-red-900 rounded">
                     <span className="uppercase text-red-500 block mb-1">Injuries:</span> 
                     {editModeId === warrior.id ? (
-                        <textarea 
-                            className="w-full bg-black text-red-400 p-1 text-xs" 
-                            value={warrior.injuries.join(',')}
-                            onChange={(e) => {
-                                const newInjuries = e.target.value.split(',').filter(x => x.trim() !== '');
-                                const updated = mob.warriors.map(w => w.id === warrior.id ? {...w, injuries: newInjuries} : w);
-                                setMob({...mob, warriors: updated});
-                                saveMob({...mob, warriors: updated});
-                            }}
-                        />
+                        <div>
+                            {warrior.injuries.map((inj, i) => (
+                                <div key={i} className="flex justify-between items-center bg-black p-1 mb-1">
+                                    <span>{inj}</span>
+                                    <button onClick={() => {
+                                        const updatedInjuries = [...warrior.injuries];
+                                        updatedInjuries.splice(i, 1);
+                                        const updatedWarriors = mob.warriors.map(w => w.id === warrior.id ? {...w, injuries: updatedInjuries} : w);
+                                        setMob({...mob, warriors: updatedWarriors});
+                                        saveMob({...mob, warriors: updatedWarriors});
+                                    }} className="text-red-500">X</button>
+                                </div>
+                            ))}
+                            <div className="flex gap-1 mt-2">
+                                <button className="text-xs bg-red-800 px-1" onClick={() => {
+                                    const updatedWarriors = mob.warriors.map(w => w.id === warrior.id ? {...w, injuries: [...w.injuries, 'Captured']} : w);
+                                    setMob({...mob, warriors: updatedWarriors});
+                                    saveMob({...mob, warriors: updatedWarriors});
+                                }}>Add Captured</button>
+                            </div>
+                        </div>
                     ) : (
                         warrior.injuries.join(', ')
                     )}
@@ -614,16 +759,63 @@ export const MobView: React.FC<MobViewProps> = ({ mob, setMob }) => {
             <div key={vehicle.id} className="bg-zinc-800 p-4 ork-border shadow-lg border-2 border-orange-700">
               <div className="flex justify-between items-start border-b-2 border-orange-900 pb-2 mb-2">
                 <div>
-                  <h3 className="font-black text-xl uppercase text-white tracking-wide">{vehicle.name}</h3>
+                  {editVehicleId === vehicle.id ? (
+                      <input 
+                        type="text" 
+                        value={vehicle.name} 
+                        onChange={e => handleVehicleEdit(vehicle.id, 'name', e.target.value)} 
+                        className="bg-black text-white p-1 border border-gray-500"
+                      />
+                  ) : (
+                      <h3 className="font-black text-xl uppercase text-white tracking-wide">{vehicle.name}</h3>
+                  )}
                   <div className="text-xs font-bold text-orange-500 uppercase">
                     {vehicle.type} <span className="text-gray-500">({vehicle.propulsion})</span>
                   </div>
                 </div>
-                <div className="text-right">
-                  <div className="font-bold text-white">Val: {getVehicleValue(vehicle)}</div>
-                  <button onClick={() => scrapVehicle(vehicle.id)} className="text-xs text-red-500 hover:text-red-400 hover:underline">Scrap</button>
+                <div className="text-right flex flex-col items-end">
+                  <div className="font-bold text-white mb-1">Val: {getVehicleValue(vehicle)}</div>
+                  <div className="flex gap-1">
+                      <button onClick={() => setEditVehicleId(editVehicleId === vehicle.id ? null : vehicle.id)} className={`text-xs px-2 py-1 border ${editVehicleId === vehicle.id ? 'bg-yellow-500 text-black' : 'text-gray-300'}`}>{editVehicleId === vehicle.id ? 'DONE' : 'EDIT'}</button>
+                      <button onClick={() => scrapVehicle(vehicle.id)} className="text-xs text-red-500 hover:text-red-400 hover:underline">Scrap</button>
+                  </div>
                 </div>
               </div>
+              
+              {editVehicleId === vehicle.id && (
+                  <div className="mb-2 p-2 bg-black/30 border border-gray-700 text-xs">
+                      <div className="mb-2">
+                          <label className="text-gray-400 block mb-1">Driver</label>
+                          <select className="bg-zinc-800 text-white w-full" value={vehicle.driverId || ''} onChange={e => handleVehicleCrewChange(vehicle.id, 'driver', e.target.value)}>
+                              <option value="">None</option>
+                              {mob.warriors.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                          </select>
+                      </div>
+                      <div className="mb-2">
+                          <label className="text-gray-400 block mb-1">Gunner</label>
+                          <select className="bg-zinc-800 text-white w-full" value={vehicle.gunnerId || ''} onChange={e => handleVehicleCrewChange(vehicle.id, 'gunner', e.target.value)}>
+                              <option value="">None</option>
+                              {mob.warriors.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                          </select>
+                      </div>
+                      <div className="mb-2">
+                          <label className="text-gray-400 block mb-1">Crew (Passengers)</label>
+                          <div className="flex flex-wrap gap-1">
+                              {mob.warriors.map(w => (
+                                  <label key={w.id} className="flex items-center gap-1 bg-zinc-800 px-2 py-1 cursor-pointer">
+                                      <input 
+                                        type="checkbox" 
+                                        checked={vehicle.crewIds?.includes(w.id) || false} 
+                                        onChange={() => handleVehicleCrewChange(vehicle.id, 'crew', w.id)} 
+                                      />
+                                      {w.name}
+                                  </label>
+                              ))}
+                          </div>
+                      </div>
+                  </div>
+              )}
+
               <div className="text-sm text-gray-300">
                 <div className="mb-2">
                   <span className="font-bold text-xs uppercase text-gray-500">Upgrades:</span>
@@ -644,7 +836,22 @@ export const MobView: React.FC<MobViewProps> = ({ mob, setMob }) => {
                 {vehicle.damage.length > 0 && (
                   <div className="text-red-400 text-xs font-bold bg-red-900/20 p-2 border border-red-900 rounded">
                     <span className="uppercase block text-red-500">Permanent Damage:</span>
-                    {vehicle.damage.join(', ')}
+                    {editVehicleId === vehicle.id ? (
+                        <div>
+                            {vehicle.damage.map((d, i) => (
+                                <div key={i} className="flex justify-between">
+                                    <span>{d}</span>
+                                    <button onClick={() => {
+                                        const newDmg = [...vehicle.damage];
+                                        newDmg.splice(i, 1);
+                                        handleVehicleEdit(vehicle.id, 'damage', newDmg);
+                                    }} className="text-red-500">x</button>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        vehicle.damage.join(', ')
+                    )}
                   </div>
                 )}
               </div>

@@ -64,6 +64,7 @@ export interface Vehicle {
   equipment: Item[]; // Gubbins, Fixed Weapons
   driverId?: string;
   gunnerId?: string;
+  crewIds?: string[]; // Passengers
   damage: string[]; // Permanent damage strings
 }
 

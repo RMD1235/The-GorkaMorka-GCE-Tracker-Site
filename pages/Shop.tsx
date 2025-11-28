@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Mob, Item, VehicleType, Warrior } from '../types';
-import { SHOP_ITEMS, IZ_IT_SAFE_TABLE, SERJERY_TABLES, INJURY_TO_TABLE_MAP } from '../constants';
+import { SHOP_ITEMS, IZ_IT_SAFE_TABLE, SERJERY_TABLES, INJURY_TO_TABLE_MAP, DA_BIG_DAY_TABLE, BODGE_TABLE } from '../constants';
 import { saveMob } from '../services/storageService';
 
 interface ShopProps {
@@ -12,6 +12,7 @@ interface ShopProps {
 type ShopTab = 'GEAR' | 'MEKS_DOKS' | 'STASH';
 
 const MEK_WEAPON_UPGRADES = ['Shootier (+1 Str)', 'More Dakka (+1 SFD)', 'Longer Range (+6")'];
+const MEK_VEHICLE_UPGRADES = ['Faster (+3" Thrust)', 'Smarter (+1 Ld Turn)', 'Eavier (+1 Armour)'];
 
 export const Shop: React.FC<ShopProps> = ({ mob, setMob }) => {
   const [activeTab, setActiveTab] = useState<ShopTab>('GEAR');
@@ -19,10 +20,13 @@ export const Shop: React.FC<ShopProps> = ({ mob, setMob }) => {
   const [selectedVehicleId, setSelectedVehicleId] = useState<string>('');
   
   // Mek State
-  const [mekAction, setMekAction] = useState<'KUSTOM_WEAPON' | 'REPAIR' | 'LOADSA_AMMO' | null>(null);
+  const [mekAction, setMekAction] = useState<'KUSTOM_WEAPON' | 'KUSTOM_VEHICLE' | 'LOADSA_AMMO' | 'FIX_PERM_DAMAGE' | null>(null);
   const [selectedWeaponIndex, setSelectedWeaponIndex] = useState<number | null>(null);
-  const [selectedUpgrade, setSelectedUpgrade] = useState<string>(MEK_WEAPON_UPGRADES[0]);
-  const [customCost, setCustomCost] = useState<number>(0);
+  const [selectedUpgrade, setSelectedUpgrade] = useState<string>('');
+  const [mekCostRoll, setMekCostRoll] = useState<number | null>(null);
+  const [mekTableRoll, setMekTableRoll] = useState<number | null>(null);
+  const [mekResult, setMekResult] = useState<any>(null);
+  const [bodgeResult, setBodgeResult] = useState<string | null>(null);
 
   // Dok State
   const [dokStep, setDokStep] = useState<number>(1);
@@ -32,6 +36,7 @@ export const Shop: React.FC<ShopProps> = ({ mob, setMob }) => {
   const [bionikTable, setBionikTable] = useState<string>('');
   const [bionikRoll, setBionikRoll] = useState<number | null>(null);
   const [bionikItem, setBionikItem] = useState<Item | null>(null);
+  const [dokCostRoll, setDokCostRoll] = useState<number | null>(null);
 
   const rollDice = (d: number) => Math.floor(Math.random() * d) + 1;
 
@@ -94,58 +99,109 @@ export const Shop: React.FC<ShopProps> = ({ mob, setMob }) => {
   };
 
   // Mek Logic
-  const applyMekUpgrade = () => {
+  const rollMekPrice = () => {
+      setMekCostRoll(rollDice(6));
+  };
+
+  const performMekJob = () => {
+      const roll = rollDice(6);
+      setMekTableRoll(roll);
+      const result = DA_BIG_DAY_TABLE.find(r => r.roll === roll);
+      setMekResult(result);
+
+      if (result?.outcome === 'Bodge') {
+          const br = rollDice(6);
+          setBodgeResult(BODGE_TABLE[br-1].desc);
+      }
+  };
+
+  const applyMekResult = () => {
     if(!selectedVehicleId && !selectedWarriorId) return;
-    if(selectedWeaponIndex === null) return;
+    if(mekCostRoll === null) return;
     
-    if (mob.teef < customCost) {
+    if (mob.teef < mekCostRoll) {
         alert("Not enuff teef to pay da Mek!");
         return;
     }
 
-    const updatedMob = { ...mob, teef: mob.teef - customCost };
+    const updatedMob = { ...mob, teef: mob.teef - mekCostRoll };
 
-    if (selectedVehicleId) {
-        updatedMob.vehicles = updatedMob.vehicles.map(v => {
+    // Success logic
+    if (mekResult?.outcome === 'Success') {
+        if (mekAction === 'KUSTOM_WEAPON' && selectedWeaponIndex !== null) {
+             if (selectedVehicleId) {
+                updatedMob.vehicles = updatedMob.vehicles.map(v => {
+                    if(v.id === selectedVehicleId) {
+                        const newEquip = [...v.equipment];
+                        const weapon = { ...newEquip[selectedWeaponIndex] };
+                        weapon.name = `Kustom: ${selectedUpgrade} - ${weapon.name}`; 
+                        weapon.upgrades = [...(weapon.upgrades || []), selectedUpgrade];
+                        newEquip[selectedWeaponIndex] = weapon;
+                        return { ...v, equipment: newEquip };
+                    }
+                    return v;
+                });
+             } else {
+                 updatedMob.warriors = updatedMob.warriors.map(w => {
+                    if(w.id === selectedWarriorId) {
+                        const newEquip = [...w.equipment];
+                        const weapon = { ...newEquip[selectedWeaponIndex] };
+                        weapon.name = `Kustom: ${selectedUpgrade} - ${weapon.name}`;
+                        weapon.upgrades = [...(weapon.upgrades || []), selectedUpgrade];
+                        newEquip[selectedWeaponIndex] = weapon;
+                        return { ...w, equipment: newEquip };
+                    }
+                    return w;
+                 });
+             }
+        } else if (mekAction === 'KUSTOM_VEHICLE' && selectedVehicleId) {
+             updatedMob.vehicles = updatedMob.vehicles.map(v => {
+                 if (v.id === selectedVehicleId) {
+                     return { ...v, equipment: [...v.equipment, { id: crypto.randomUUID(), name: `Kustom: ${selectedUpgrade}`, cost: 0, type: 'Gubbinz' }] };
+                 }
+                 return v;
+             });
+        } else if (mekAction === 'FIX_PERM_DAMAGE' && selectedVehicleId) {
+             updatedMob.vehicles = updatedMob.vehicles.map(v => {
+                 if (v.id === selectedVehicleId && v.damage.length > 0) {
+                     const newDamage = [...v.damage];
+                     newDamage.pop(); // Simplification: remove last damage
+                     return { ...v, damage: newDamage };
+                 }
+                 return v;
+             });
+        }
+    } else if (mekResult?.outcome === 'Bodge') {
+        alert(`BODGED: ${bodgeResult}`);
+        // Logic to apply bodge effect could go here (add "Bodge" item)
+    }
+
+    // Loadsa Ammo (Always succeeds, no roll needed really, but kept in flow)
+    if (mekAction === 'LOADSA_AMMO' && selectedWeaponIndex !== null && selectedVehicleId) {
+         updatedMob.vehicles = updatedMob.vehicles.map(v => {
             if(v.id === selectedVehicleId) {
-                const newEquip = [...v.equipment];
-                const weapon = { ...newEquip[selectedWeaponIndex] };
-                
-                if (mekAction === 'LOADSA_AMMO') {
-                    // Loadsa Ammo is a separate Gubbinz item, but we logic it here
-                    const ammoItem: Item = {
-                        id: crypto.randomUUID(),
-                        name: `Loadsa Ammo (${weapon.name})`,
-                        cost: Math.ceil(weapon.cost / 4),
-                        type: 'Gubbinz'
-                    };
-                    newEquip.push(ammoItem);
-                } else {
-                    weapon.upgrades = [...(weapon.upgrades || []), selectedUpgrade];
-                    newEquip[selectedWeaponIndex] = weapon;
-                }
-                return { ...v, equipment: newEquip };
+                const weapon = v.equipment[selectedWeaponIndex];
+                const ammoItem: Item = {
+                    id: crypto.randomUUID(),
+                    name: `Loadsa Ammo (${weapon.name})`,
+                    cost: Math.ceil(weapon.cost / 4),
+                    type: 'Gubbinz'
+                };
+                return { ...v, equipment: [...v.equipment, ammoItem] };
             }
             return v;
-        });
-    } else {
-        // Warrior Weapons
-        updatedMob.warriors = updatedMob.warriors.map(w => {
-            if(w.id === selectedWarriorId) {
-                const newEquip = [...w.equipment];
-                const weapon = { ...newEquip[selectedWeaponIndex] };
-                weapon.upgrades = [...(weapon.upgrades || []), selectedUpgrade];
-                newEquip[selectedWeaponIndex] = weapon;
-                return { ...w, equipment: newEquip };
-            }
-            return w;
         });
     }
 
     setMob(updatedMob);
     saveMob(updatedMob);
+    
+    // Reset
     setMekAction(null);
-    setCustomCost(0);
+    setMekCostRoll(null);
+    setMekTableRoll(null);
+    setMekResult(null);
+    setSelectedWeaponIndex(null);
   };
 
   // Dok Logic
@@ -154,6 +210,7 @@ export const Shop: React.FC<ShopProps> = ({ mob, setMob }) => {
       setIzItSafeRoll(roll);
       const result = IZ_IT_SAFE_TABLE.find(r => r.roll === roll);
       setIzItSafeResult(result);
+      setDokCostRoll(rollDice(6));
       
       const warrior = mob.warriors.find(w => w.id === selectedWarriorId);
       const injury = warrior?.injuries[selectedInjuryIndex!];
@@ -165,7 +222,6 @@ export const Shop: React.FC<ShopProps> = ({ mob, setMob }) => {
       });
 
       if (result?.outcome === 'Random_Table') {
-          // Logic to randomize table (simplified to just Chest for now or fully random)
           const keys = Object.keys(SERJERY_TABLES);
           table = keys[Math.floor(Math.random() * keys.length)];
       }
@@ -183,19 +239,25 @@ export const Shop: React.FC<ShopProps> = ({ mob, setMob }) => {
   };
 
   const dokStep3_Apply = () => {
-      if (mob.teef < customCost) return alert("Pay da Dok!");
+      if (!dokCostRoll) return;
+      if (mob.teef < dokCostRoll) return alert("Pay da Dok!");
       
-      const updatedMob = { ...mob, teef: mob.teef - customCost };
+      const updatedMob = { ...mob, teef: mob.teef - dokCostRoll };
       updatedMob.warriors = updatedMob.warriors.map(w => {
           if(w.id === selectedWarriorId) {
               const newInjuries = [...w.injuries];
               
               // If result was Success_Miss, mark injured
-              const isInjured = izItSafeResult.outcome === 'Success_Miss' ? true : w.isInjured;
+              let isInjured = izItSafeResult.outcome === 'Success_Miss' ? true : w.isInjured;
 
               // Remove injury if successful operation (Most are, except Bodge)
               if (izItSafeResult.outcome !== 'Bodge') {
                   newInjuries.splice(selectedInjuryIndex!, 1);
+              }
+
+              // Auto-clear injured status if no injuries remain
+              if (newInjuries.length === 0 && !isInjured) {
+                  isInjured = false;
               }
 
               // Add Bionik if generated
@@ -217,7 +279,7 @@ export const Shop: React.FC<ShopProps> = ({ mob, setMob }) => {
       setIzItSafeRoll(null);
       setBionikItem(null);
       setSelectedInjuryIndex(null);
-      setCustomCost(0);
+      setDokCostRoll(null);
   };
 
   const sellStashItem = (index: number) => {
@@ -350,91 +412,86 @@ export const Shop: React.FC<ShopProps> = ({ mob, setMob }) => {
                       ) : (
                           <div>
                               <div className="mb-4">
-                                  <h3 className="font-bold text-lg mb-2 text-white">1. Choose Weapon/Item</h3>
-                                  <div className="flex flex-wrap gap-2">
-                                      {/* Vehicle Weapons */}
-                                      {selectedVehicleId && mob.vehicles.find(v => v.id === selectedVehicleId)?.equipment.filter(e => e.type === 'Vehicle Weapon' || e.type === 'Gunz').map((w, idx) => (
-                                          <button 
-                                            key={idx} 
-                                            onClick={() => { setMekAction('KUSTOM_WEAPON'); setSelectedWeaponIndex(idx); }}
-                                            className={`px-3 py-2 border ${selectedWeaponIndex === idx ? 'bg-blue-600 border-white' : 'bg-zinc-900 border-zinc-600'} text-sm font-bold`}
-                                          >
-                                              {w.name}
-                                          </button>
-                                      ))}
-                                      {/* Warrior Weapons */}
-                                      {selectedWarriorId && mob.warriors.find(w => w.id === selectedWarriorId)?.equipment.filter(e => e.type === 'Gunz').map((w, idx) => (
-                                          <button 
-                                            key={idx} 
-                                            onClick={() => { setMekAction('KUSTOM_WEAPON'); setSelectedWeaponIndex(idx); }}
-                                            className={`px-3 py-2 border ${selectedWeaponIndex === idx ? 'bg-blue-600 border-white' : 'bg-zinc-900 border-zinc-600'} text-sm font-bold`}
-                                          >
-                                              {w.name}
-                                          </button>
-                                      ))}
+                                  <h3 className="font-bold text-lg mb-2 text-white">1. Choose Job</h3>
+                                  <div className="flex flex-wrap gap-2 mb-4">
+                                      {/* Vehicle Options */}
+                                      {selectedVehicleId && (
+                                          <>
+                                            <button onClick={() => setMekAction('KUSTOM_VEHICLE')} className={`px-3 py-2 border ${mekAction === 'KUSTOM_VEHICLE' ? 'bg-blue-600 border-white' : 'bg-zinc-900 border-zinc-600'}`}>Kustomise Vehicle</button>
+                                            <button onClick={() => setMekAction('FIX_PERM_DAMAGE')} className={`px-3 py-2 border ${mekAction === 'FIX_PERM_DAMAGE' ? 'bg-blue-600 border-white' : 'bg-zinc-900 border-zinc-600'}`}>Fix Permanent Damage</button>
+                                            <button onClick={() => setMekAction('LOADSA_AMMO')} className={`px-3 py-2 border ${mekAction === 'LOADSA_AMMO' ? 'bg-blue-600 border-white' : 'bg-zinc-900 border-zinc-600'}`}>Loadsa Ammo</button>
+                                          </>
+                                      )}
+                                      <button onClick={() => setMekAction('KUSTOM_WEAPON')} className={`px-3 py-2 border ${mekAction === 'KUSTOM_WEAPON' ? 'bg-blue-600 border-white' : 'bg-zinc-900 border-zinc-600'}`}>Kustomise Weapon</button>
                                   </div>
-                                  
-                                  {selectedVehicleId && (
-                                      <button 
-                                        onClick={() => { setMekAction('LOADSA_AMMO'); setSelectedWeaponIndex(null); }}
-                                        className={`mt-4 px-4 py-2 border ${mekAction === 'LOADSA_AMMO' ? 'bg-blue-600 border-white' : 'bg-zinc-900 border-zinc-600'} font-bold uppercase`}
-                                      >
-                                          ADD LOADSA AMMO
-                                      </button>
-                                  )}
-                              </div>
 
-                              {mekAction === 'KUSTOM_WEAPON' && selectedWeaponIndex !== null && (
-                                  <div className="mb-4 p-4 bg-blue-900/20 border border-blue-500 rounded">
-                                      <h3 className="font-bold text-lg mb-2">2. Pick Upgrade</h3>
-                                      <select 
-                                        className="w-full p-2 bg-zinc-900 border border-blue-500 text-white mb-2"
-                                        value={selectedUpgrade}
-                                        onChange={(e) => setSelectedUpgrade(e.target.value)}
-                                      >
-                                          {MEK_WEAPON_UPGRADES.map(u => <option key={u} value={u}>{u}</option>)}
-                                      </select>
-                                  </div>
-                              )}
-
-                              {mekAction === 'LOADSA_AMMO' && (
-                                  <div className="mb-4 p-4 bg-blue-900/20 border border-blue-500 rounded">
-                                      <h3 className="font-bold text-lg mb-2">Select Weapon for Loadsa Ammo</h3>
-                                      <p className="text-xs text-gray-400 mb-2">Cost is 1/4 of weapon cost.</p>
-                                      <div className="flex flex-wrap gap-2">
-                                        {selectedVehicleId && mob.vehicles.find(v => v.id === selectedVehicleId)?.equipment.filter(e => e.type === 'Vehicle Weapon').map((w, idx) => (
-                                            <button 
-                                                key={idx}
-                                                onClick={() => { 
-                                                    setSelectedWeaponIndex(idx); 
-                                                    setCustomCost(Math.ceil(w.cost / 4));
-                                                }}
-                                                className={`px-3 py-2 border ${selectedWeaponIndex === idx ? 'bg-yellow-500 text-black' : 'bg-zinc-900 border-zinc-600'} text-sm font-bold`}
-                                            >
-                                                {w.name} ({Math.ceil(w.cost/4)} T)
-                                            </button>
-                                        ))}
+                                  {/* Sub Selection for Weapons */}
+                                  {(mekAction === 'KUSTOM_WEAPON' || mekAction === 'LOADSA_AMMO') && (
+                                      <div className="mb-4">
+                                          <h4 className="text-sm font-bold text-gray-400 mb-1">Select Weapon:</h4>
+                                          <div className="flex flex-wrap gap-2">
+                                              {selectedVehicleId && mob.vehicles.find(v => v.id === selectedVehicleId)?.equipment.filter(e => e.type === 'Vehicle Weapon' || e.type === 'Gunz').map((w, idx) => (
+                                                  <button 
+                                                    key={idx} 
+                                                    onClick={() => { setSelectedWeaponIndex(idx); }}
+                                                    className={`px-3 py-2 border ${selectedWeaponIndex === idx ? 'bg-yellow-500 text-black' : 'bg-zinc-900 border-zinc-600'} text-xs font-bold`}
+                                                  >
+                                                      {w.name}
+                                                  </button>
+                                              ))}
+                                              {selectedWarriorId && mob.warriors.find(w => w.id === selectedWarriorId)?.equipment.filter(e => e.type === 'Gunz').map((w, idx) => (
+                                                  <button 
+                                                    key={idx} 
+                                                    onClick={() => { setSelectedWeaponIndex(idx); }}
+                                                    className={`px-3 py-2 border ${selectedWeaponIndex === idx ? 'bg-yellow-500 text-black' : 'bg-zinc-900 border-zinc-600'} text-xs font-bold`}
+                                                  >
+                                                      {w.name}
+                                                  </button>
+                                              ))}
+                                          </div>
                                       </div>
-                                  </div>
-                              )}
+                                  )}
 
-                              <div className="flex gap-4 items-end bg-black/30 p-4 rounded border border-zinc-600 mt-4">
-                                  <div className="flex-1">
-                                      <label className="block text-xs uppercase text-gray-400 font-bold mb-1">Mek's Bill (Teef)</label>
-                                      <input 
-                                        type="number" 
-                                        className="w-full p-2 bg-zinc-900 border border-gray-600 text-white font-bold" 
-                                        value={customCost} 
-                                        onChange={(e) => setCustomCost(parseInt(e.target.value) || 0)} 
-                                      />
-                                  </div>
-                                  <button 
-                                    onClick={applyMekUpgrade}
-                                    disabled={selectedWeaponIndex === null}
-                                    className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-6 ork-border disabled:opacity-50 disabled:grayscale"
-                                  >
-                                      PAY & APPLY
-                                  </button>
+                                  {/* Upgrade Type Selection */}
+                                  {mekAction === 'KUSTOM_WEAPON' && selectedWeaponIndex !== null && (
+                                      <div className="mb-4">
+                                          <h4 className="text-sm font-bold text-gray-400 mb-1">Select Upgrade:</h4>
+                                          <select className="w-full bg-black text-white p-2" onChange={e => setSelectedUpgrade(e.target.value)} value={selectedUpgrade}>
+                                              {MEK_WEAPON_UPGRADES.map(u => <option key={u} value={u}>{u}</option>)}
+                                          </select>
+                                      </div>
+                                  )}
+                                  {mekAction === 'KUSTOM_VEHICLE' && (
+                                      <div className="mb-4">
+                                          <h4 className="text-sm font-bold text-gray-400 mb-1">Select Upgrade:</h4>
+                                          <select className="w-full bg-black text-white p-2" onChange={e => setSelectedUpgrade(e.target.value)} value={selectedUpgrade}>
+                                              {MEK_VEHICLE_UPGRADES.map(u => <option key={u} value={u}>{u}</option>)}
+                                          </select>
+                                      </div>
+                                  )}
+
+                                  {/* Mek Execution */}
+                                  {mekAction && (
+                                      <div className="bg-black/40 p-4 border border-blue-900">
+                                          <div className="flex gap-4 items-center mb-4">
+                                              <button onClick={rollMekPrice} disabled={!!mekCostRoll} className="bg-blue-800 text-white px-3 py-1 font-bold">Roll Cost</button>
+                                              <div className="text-xl font-bold text-yellow-500">{mekCostRoll ? `${mekCostRoll} Teef` : '???'}</div>
+                                          </div>
+                                          
+                                          <div className="flex gap-4 items-center mb-4">
+                                              <button onClick={performMekJob} disabled={!mekCostRoll || !!mekTableRoll} className="bg-blue-600 text-white px-3 py-1 font-bold">DO DA JOB!</button>
+                                              <div className="text-lg text-white">{mekResult?.title}</div>
+                                          </div>
+                                          
+                                          {mekResult && (
+                                              <div>
+                                                  <p className="text-sm text-gray-300 mb-2 italic">{mekResult.desc}</p>
+                                                  {bodgeResult && <p className="text-red-400 font-bold mb-2">BODGE: {bodgeResult}</p>}
+                                                  <button onClick={applyMekResult} className="w-full bg-green-600 py-2 font-black uppercase">PAY & APPLY</button>
+                                              </div>
+                                          )}
+                                      </div>
+                                  )}
                               </div>
                           </div>
                       )}
@@ -494,12 +551,7 @@ export const Shop: React.FC<ShopProps> = ({ mob, setMob }) => {
                                       <div className="flex gap-4 items-end bg-black/30 p-4 rounded border border-zinc-600 mt-4 text-left">
                                           <div className="flex-1">
                                               <label className="block text-xs uppercase text-gray-400 font-bold mb-1">Bill (Teef)</label>
-                                              <input 
-                                                type="number" 
-                                                className="w-full p-2 bg-zinc-900 border border-gray-600 text-white font-bold" 
-                                                value={customCost} 
-                                                onChange={(e) => setCustomCost(parseInt(e.target.value) || 0)} 
-                                              />
+                                              <div className="text-xl font-bold text-yellow-500">{dokCostRoll} Teef</div>
                                           </div>
                                           <button 
                                             onClick={dokStep3_Apply}

@@ -153,17 +153,39 @@ export const SKILL_ACCESS: Record<WarriorType, string[]> = {
 };
 
 export const INJURY_TABLE = [
-  { range: [11, 12, 13, 14, 15, 16], result: 'Dead', desc: 'The warrior is lost.' },
-  { range: [21, 22, 23], result: 'Multiple Injuries', desc: 'Roll D6 times on this table.' },
-  { range: [24, 25, 26], result: 'Leg Wound', desc: '-1 Move' },
-  { range: [31, 32, 33], result: 'Arm Wound', desc: '-1 Strength' },
-  { range: [34, 35, 36], result: 'Head Wound', desc: 'Frenzy or Stupidity on 4+' },
-  { range: [41, 42, 43], result: 'Chest Wound', desc: '-1 Toughness' },
-  { range: [44, 45, 46], result: 'Blinded in One Eye', desc: '-1 BS' },
-  { range: [51, 52, 53, 54, 55, 56], result: 'Full Recovery', desc: 'Misses next game.' },
+  { range: [11, 12, 13, 14, 15], result: 'Dead', desc: 'The warrior is lost.' },
+  { range: [16], result: 'Multiple Injuries', desc: 'Roll D6 times on this table.' },
+  { range: [21], result: 'Chest Wound', desc: '-1 Toughness' },
+  { range: [22], result: 'Leg Wound', desc: '-1 Move' },
+  { range: [23], result: 'Arm Wound', desc: 'Random arm injured.' },
+  { range: [24, 25, 26], result: 'Head Wound', desc: 'Frenzy or Stupidity on 4+' },
+  { range: [31], result: 'Blinded in One Eye', desc: '-1 BS' },
+  { range: [32], result: 'Gobsmacked', desc: 'Miss next game, -1 Ld on 4+' },
+  { range: [33, 34, 35], result: 'Old Battle Wound', desc: 'Roll before game to play.' },
+  { range: [36, 41, 42, 43, 44, 45, 46, 51, 52, 53, 54, 55], result: 'Full Recovery', desc: 'Misses next game.' },
+  { range: [56], result: 'Bitter Enmity', desc: 'Hates the enemy.' },
   { range: [61, 62, 63], result: 'Captured', desc: 'Captured by enemy mob.' },
-  { range: [64, 65, 66], result: 'Bitter Enmity', desc: 'Hates the enemy.' },
+  { range: [64, 65], result: 'Impressive Scar', desc: '+1 Ld' },
+  { range: [66], result: 'Survives Against Odds', desc: 'Full Recovery + 5 XP' },
 ];
+
+// Re-defining table for lookup logic consistency based on manual injury text matching
+export const INJURY_LOOKUP_MAP: Record<string, string> = {
+    'Dead': 'Dead',
+    'Multiple Injuries': 'Multiple',
+    'Leg Wound': 'Leg',
+    'Arm Wound': 'Arm',
+    'Head Wound': 'Head',
+    'Chest Wound': 'Chest',
+    'Blinded in One Eye': 'Eye',
+    'Gobsmacked': 'Gobsmacked',
+    'Full Recovery': 'Recovery',
+    'Captured': 'Captured',
+    'Bitter Enmity': 'Enmity',
+    'Impressive Scar': 'Scar',
+    'Survives Against Odds': 'Survives',
+    'Old Battle Wound': 'OldWound'
+};
 
 // Dok Serjery Tables
 export const IZ_IT_SAFE_TABLE = [
@@ -173,6 +195,24 @@ export const IZ_IT_SAFE_TABLE = [
   { roll: 4, title: 'Rooteen Serjery', desc: 'Success! Pay D6 teef.', outcome: 'Success' },
   { roll: 5, title: 'Rooteen Serjery', desc: 'Success! Pay D6 teef.', outcome: 'Success' },
   { roll: 6, title: 'Profeshunnal!', desc: 'Success! Pay D6 teef. No side effects.', outcome: 'Success' },
+];
+
+export const DA_BIG_DAY_TABLE = [
+    { roll: 1, title: 'We Adda Bitta Trubble', desc: 'Work Bodged. Roll on Bodge Table. Pay D6.', outcome: 'Bodge' },
+    { roll: 2, title: 'While we Wuz at It...', desc: 'Repaired something random instead. Pay D6.', outcome: 'Random_Repair' },
+    { roll: 3, title: 'Can\'t Get da Parts', desc: 'Nothing happened. No charge.', outcome: 'Nothing' },
+    { roll: 4, title: 'Job\'s a Good \'Un', desc: 'Success! Pay D6.', outcome: 'Success' },
+    { roll: 5, title: 'Job\'s a Good \'Un', desc: 'Success! Pay D6.', outcome: 'Success' },
+    { roll: 6, title: 'Job\'s a Good \'Un', desc: 'Success! Pay D6.', outcome: 'Success' },
+];
+
+export const BODGE_TABLE = [
+    { roll: 1, desc: 'Weapon destroyed / Thrusters Bodged (4+ to work)' },
+    { roll: 2, desc: 'Bits Left Out (1 shot then breaks) / Steering Bodged (Ld test to turn)' },
+    { roll: 3, desc: 'Sights Bodged (Half range) / Gas Engine Bodged (Half speed)' },
+    { roll: 4, desc: 'Aim Bodged (-1 Hit) / Gears Bodged (Slow speed dangerous)' },
+    { roll: 5, desc: 'Rapid Fire Bodged (Ammo test every shot) / Injector Bodged (1s jam)' },
+    { roll: 6, desc: 'Feed Bodged (Auto fail ammo) / Brakes Bodged (No stopping)' },
 ];
 
 // Maps injury names to table keys
