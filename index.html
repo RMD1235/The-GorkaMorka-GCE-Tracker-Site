@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Da Great Waaagh Tracker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Bangers&family=Roboto+Mono:wght@400;700&display=swap');
+      
+      body {
+        background-color: #2a2a2a;
+        font-family: 'Roboto Mono', monospace;
+        background-image: radial-gradient(#3a3a3a 1px, transparent 1px);
+        background-size: 20px 20px;
+      }
+      
+      h1, h2, h3, h4, h5, h6 {
+        font-family: 'Bangers', cursive;
+        letter-spacing: 1px;
+      }
+
+      .ork-border {
+        border: 4px solid #1a1a1a;
+        box-shadow: 4px 4px 0px #000000;
+      }
+
+      .btn-ork {
+        transition: all 0.1s;
+      }
+      .btn-ork:active {
+        transform: translate(2px, 2px);
+        box-shadow: 0px 0px 0px #000000;
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.30.0",
+    "react-router-dom": "https://aistudiocdn.com/react-router-dom@^7.9.6"
+  }
+}
+</script>
+</head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
