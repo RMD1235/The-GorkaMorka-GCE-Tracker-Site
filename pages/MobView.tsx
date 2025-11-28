@@ -60,6 +60,15 @@ export const MobView: React.FC<MobViewProps> = ({ mob, setMob }) => {
     return val;
   };
 
+  const getVehicleValue = (vehicle: Vehicle) => {
+    let val = vehicle.cost;
+    vehicle.equipment.forEach(e => {
+        val += e.cost;
+        if (e.upgrades) val += (e.upgrades.length * 5);
+    });
+    return val;
+  };
+
   const getEffectiveStats = (warrior: Warrior): StatLine => {
       const stats = { ...warrior.stats };
       
@@ -611,7 +620,7 @@ export const MobView: React.FC<MobViewProps> = ({ mob, setMob }) => {
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="font-bold text-white">{vehicle.cost} Teef</div>
+                  <div className="font-bold text-white">Val: {getVehicleValue(vehicle)}</div>
                   <button onClick={() => scrapVehicle(vehicle.id)} className="text-xs text-red-500 hover:text-red-400 hover:underline">Scrap</button>
                 </div>
               </div>
